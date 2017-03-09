@@ -1,4 +1,118 @@
 from openpyxl import load_workbook
+from openpyxl import Workbook
+
+
+class maker:
+
+    def __init__(self, reference, start, end):
+        self._wb = Workbook()
+        self._ws = self._wb.active
+        self._reference = reference
+        self._max_row = 2
+        self._max_col = 1
+
+        self._start_reference_cell = ''
+        self._start_reference_index = 0
+
+        # Will be 1 cell further than the last cell last ->end_cell|
+        self._end_reference_cell = ''
+        self._end_reference_index = 0
+
+        self.set_date(start=start, end=end)
+
+    def set_date(self, start, end):
+        col = 2
+
+        while True:
+            current_cell = self._reference.cell(row=1, column=col).value
+
+            if current_cell >= start:
+                start_index = col
+                break
+            else:
+                col += 1
+
+        new_col = 2
+        while True:
+            current_cell = self._reference.cell(row=1, column=col).value
+
+            if current_cell > end or current_cell == 'Total':
+                # Sets the start and end times for the reference cell
+                self._start_reference_cell = self._reference.cell(row=1, column=start_index)
+                self._start_reference_index = start_index
+                self._end_reference_cell = self._reference.cell(row=1, column=col)
+                self._end_reference_index = col
+
+                end_index = col
+                # Limit everything within these cells
+                self._max_col = end_index - start_index + 2
+
+                self._ws.cell(row=1, column=self._max_col, value='Total')
+
+                break
+            else:
+                self._ws.cell(row=1, column=new_col, value=current_cell)
+                new_col += 1
+                col += 1
+
+    def add_person(self, name, row):
+        # Add Name
+        self._ws.cell(row=self._max_row, column=1, value=name)
+
+        start_cell = 2
+        cell_total = 0
+
+        # Add Daily
+        for cell in range(self._start_reference_index, self._end_reference_index):
+            data = self._reference.cell(row=row, column=cell).value
+
+            if isinstance(data, int):
+                cell_total += data
+                self._ws.cell(row=self._max_row, column=start_cell, value=data)
+
+            start_cell += 1
+
+        # Add Total
+        self._ws.cell(row=self._max_row, column=self._max_col, value=cell_total)
+        self._max_row += 1
+
+    def filter(self, name_cache, white_list, blacklist):
+        white_filtered = set([])
+        black_filtered = set([])
+
+        # White list
+        if white_list is not []:
+            # If white_list is not empty
+            for key in white_list:
+                for name in name_cache:
+                    # If key is in white list
+                    if key.lower() in name.lower():
+                        white_filtered.add(name)
+        else:
+            # If white_list is empty load it with all names
+            white_filtered = set(name_cache.keys())
+
+        # Black list
+        for key in blacklist:
+            for name in name_cache:
+                # If key is in black list
+                if key.lower() in name.lower():
+                    black_filtered.add(name)
+
+        # Remove everything from the white list that is also in the black list
+        white_filtered.difference_update(black_filtered)
+
+        # Sort alphabetically
+        filtered = list(white_filtered)
+        filtered.sort()
+
+        for name in filtered:
+            # Add each person
+            self.add_person(name, name_cache[name])
+
+    def save(self, name='test'):
+        self._wb.save(name + '.xlsx')
+
 
 
 def options():
@@ -14,10 +128,10 @@ def options():
         name_cache[worksheet.cell(row=row, column=1).value] = i
         i += 1
 
-    whitelist = []
+    white_list = []
     blacklist = []
-    default_start = start_date = worksheet.cell(row=1, column=2).value
-    default_end = end_date = worksheet.cell(row=1, column=worksheet.max_column - 1).value
+    start_date = worksheet.cell(row=1, column=2).value
+    end_date = worksheet.cell(row=1, column=worksheet.max_column - 1).value
 
     while True:
         ans = input('Total Messages for a person? ("total <name>")\n'
@@ -29,7 +143,7 @@ def options():
 
         info = ans.split()
 
-        if info == []:
+        if info is []:
             # If nothing was entered
             pass
 
@@ -37,8 +151,8 @@ def options():
             break
 
         elif 'add' in info[0]:
-            # Adds a keyword to the whitelist that has to appear in a person's name
-            whitelist.append(info[1])
+            # Adds a keyword to the white_list that has to appear in a person's name
+            white_list.append(info[1])
 
         elif 'remove' in info[0]:
             # Adds a keyword to the blacklist that has to appear in a person's name
@@ -92,143 +206,15 @@ def options():
                 # If invalid information was entered
                 print('Person does not exist!\n')
 
+    ws = maker(worksheet, start_date, end_date)
 
-    edited = False
+    if white_list is not [] or blacklist is not []:
+        ws.filter(name_cache, white_list, blacklist)
+    else:
+        # Add everyone
+        name_list = list(name_cache.keys())
+        name_list.sort()
+        for name in name_list:
+            ws.add_person(name, name_cache[name])
 
-    if start_date != default_start:
-        remove_from_start(worksheet, start_date)
-        edited = True
-    if end_date != default_end:
-        remove_from_end(worksheet, end_date)
-        edited = True
-    if whitelist != []:
-        check_names(worksheet, name_cache, removed_names, list=whitelist, key='whitelist')
-        edited = True
-    if blacklist != []:
-        check_names(worksheet, name_cache, removed_names, list=whitelist, key='blacklist')
-        edited = True
-
-    if edited == True:
-        #remove_empty(worksheet, name_cache, removed_names)
-
-        ans = input('What would you like to name the file?\n')
-        workbook.save(ans.split('.')[0] + '.xlsx')
-
-
-def remove_empty(worksheet):
-    pass
-
-
-def check_names(worksheet, name_cache, removed_names, list=None, key=None):
-    if key is None or list is None:
-        raise Exception('Invalid key!')
-
-    for name in name_cache.copy():
-
-        if key == 'whitelist':
-            has = whitelist_keys(list, name.lower())
-        else:
-            has = blacklist_keys(list, name.lower())
-
-        if not has:
-            delete_row(worksheet, name_cache[name])
-            removed_names[name] = name_cache[name]
-            name_cache.pop(name)
-
-
-def whitelist_keys(whitelist, name):
-    """
-    Remove row if name does not have a keyword in the whitelist
-
-    :param worksheet:
-    :param whitelist:
-    :return:
-    """
-    for key in whitelist:
-        if key.lower() in name:
-            return True
-    return False
-
-
-def blacklist_keys(blacklist, name):
-    """
-    Remove row if name has a keyword in the whitelist
-
-    :param worksheet:
-    :param whitelist:
-    :return:
-    """
-
-    for key in blacklist:
-        if not key.lower() in name:
-            return True
-    return False
-
-
-def remove_from_start(worksheet, start_date):
-    """
-    Remove dates before <start_date> in worksheet
-
-    :param worksheet:
-    :param start_date:
-    :return:
-    """
-    row = 1
-    col = 2
-    cell = ''
-
-    while cell != 'Total':
-        cell = worksheet.cell(row=row, column=col).value
-
-        if cell < start_date:
-            delete_column(worksheet, col)
-            col += 1
-        else:
-            break
-
-
-def remove_from_end(worksheet, end_date):
-    """
-    Remove dates after <end_date> in worksheet
-
-    :param worksheet:
-    :param end_date:
-    :return:
-    """
-    row = 1
-    col = worksheet.max_column - 1
-    cell = 'Total'
-
-    while cell != '':
-        cell = worksheet.cell(row=row, column=col).value
-
-        if cell > end_date:
-            delete_column(worksheet, col)
-            col -= 1
-        else:
-            break
-
-
-def delete_row(worksheet, row):
-    """
-    Deletes row <row> in the worksheet
-
-    :param worksheet:
-    :param row:
-    :return:
-    """
-
-    for col in range(1, worksheet.max_row):
-        worksheet.cell(row=row, column=col).value = None
-
-
-def delete_column(worksheet, col):
-    """
-    Deletes column <col> in the worksheet
-
-    :param worksheet:
-    :param col:
-    :return:
-    """
-    for row in range(1, worksheet.max_row):
-        worksheet.cell(row=row, column=col).value = None
+    ws.save()
