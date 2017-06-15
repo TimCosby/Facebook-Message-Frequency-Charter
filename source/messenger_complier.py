@@ -1,5 +1,5 @@
 from bs4 import BeautifulSoup
-from facebook import GraphAPI
+from facebook import GraphAPI  # facebook-sdk
 import threading
 from queue import Queue
 from openpyxl import Workbook
@@ -160,7 +160,10 @@ def get_messages(message_count):
 
     que = Queue(maxsize=50)
     for line in html:
-        clean_line = BeautifulSoup(line, 'lxml').getText()
+        try:
+            clean_line = BeautifulSoup(line, 'lxml').getText()
+        except Exception:
+            print('Install lxml')
         #print(line)
         if len(clean_line) != 0:
             t = threading.Thread(target=add_option,
